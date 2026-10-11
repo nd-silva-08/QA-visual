@@ -1,0 +1,17 @@
+{
+  "name": "qa-visual",
+  "owner": {
+    "name": "Nisitha de Silva",
+    "url": "https://github.com/nd-silva-08"
+  },
+  "metadata": {
+    "description": "Visual QA for pull requests: before/after diagrams of what a PR changes, with clickable parts down to the code."
+  },
+  "plugins": [
+    {
+      "name": "visual-qa",
+      "source": "./",
+      "description": "Before/after architecture and logic diagrams for pull requests, with changed parts highlighted and clickable down to the code lines and QA checks."
+    }
+  ]
+}

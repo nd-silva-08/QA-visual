@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "title": "PR title in plain words",
+  "summary": "Two to four sentences: what this PR changes for users or for the system, and what a reviewer should focus on.",
+  "risk": "low",
+  "riskNote": "Why this risk level.",
+  "pr": {
+    "number": 0,
+    "title": "PR title",
+    "baseRef": "main",
+    "headRef": "feature-branch",
+    "base": "<merge-base sha from collect.mjs>",
+    "head": "<head sha from collect.mjs>"
+  },
+  "diagrams": [
+    {
+      "id": "flow",
+      "title": "What happens when …",
+      "description": "One sentence on what this diagram shows.",
+      "sections": [
+        { "id": "s1", "title": "First stage" },
+        { "id": "s2", "title": "Second stage", "subtitle": "optional context" }
+      ],
+      "nodes": [
+        { "id": "start", "section": "s1", "col": 0, "row": 0, "title": "Someone acts", "sub": "What they do", "tech": "where" },
+        {
+          "id": "step", "section": "s1", "col": 1, "row": 0, "status": "changed",
+          "title": "A step", "sub": "What it does now",
+          "before": { "sub": "What it did before" },
+          "detail": {
+            "headline": "One sentence: what is different.",
+            "summary": "What it does now and why that matters, in plain words.",
+            "before": "Observable behaviour before.",
+            "after": "Observable behaviour after.",
+            "qa": [{ "check": "Do X", "expect": "Y happens" }],
+            "risk": "low",
+            "code": [{ "path": "src/file.ts", "lines": "10-24", "symbol": "functionName" }]
+          }
+        },
+        {
+          "id": "check", "section": "s2", "col": 1, "row": 0, "shape": "decision", "status": "added",
+          "title": "Some condition?",
+          "detail": {
+            "headline": "New check: …",
+            "summary": "When it is true and when it is false.",
+            "qa": [{ "check": "Value exactly at the limit", "expect": "…" }],
+            "risk": "medium",
+            "code": [{ "path": "src/file.ts", "lines": "30-36" }]
+          }
+        }
+      ],
+      "edges": [
+        { "id": "e1", "from": "start", "to": "step" },
+        {
+          "id": "e2", "from": "step", "to": "check", "status": "added",
+          "detail": { "summary": "Every … now goes through the new check.", "qa": ["…"], "code": [{ "path": "src/file.ts", "lines": "28" }] }
+        }
+      ]
+    }
+  ],
+  "unmapped": [
+    { "path": "package-lock.json", "reason": "Dependency lockfile" }
+  ]
+}

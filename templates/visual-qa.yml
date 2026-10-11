@@ -1,0 +1,86 @@
+# Visual QA on every pull request.
+#
+# Copy this file to .github/workflows/visual-qa.yml in the repository you want reviewed, and add
+# an ANTHROPIC_API_KEY repository secret (or swap in claude_code_oauth_token / Bedrock / Vertex,
+# see anthropics/claude-code-action). On each PR it draws the before/after diagrams, uploads the
+# interactive report as a workflow artifact, and posts (or updates) one summary comment.
+
+name: Visual QA
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: visual-qa-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  visual-qa:
+    # Secrets aren't available to pull requests from forks, so only run for branches in this repo.
+    if: ${{ !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the diagrams need both the base and the head history
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Draw the before/after diagrams
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          plugin_marketplaces: https://github.com/nd-silva-08/QA-visual.git
+          plugins: visual-qa@qa-visual
+          prompt: |
+            Use the visual-qa skill to review pull request #${{ github.event.pull_request.number }}.
+            Before = ${{ github.event.pull_request.base.sha }}, after = ${{ github.event.pull_request.head.sha }}
+            (run collect.mjs with --base and --head set to those SHAs).
+            This is a non-interactive CI run: don't ask questions, don't post comments, don't commit or push.
+            Write the spec to .visual-qa/spec.json and render it with:
+              --out .visual-qa/report.html --summary .visual-qa/summary.md --check --screenshot .visual-qa/shot
+            Fix every error, unexplained-file warning, and layout problem before finishing.
+          claude_args: >-
+            --allowedTools "Bash(git:*),Bash(node:*),Read,Write,Edit,Glob,Grep"
+
+      - name: Upload the interactive report
+        id: upload
+        if: always() && hashFiles('.visual-qa/report.html') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-qa-pr-${{ github.event.pull_request.number }}
+          path: |
+            .visual-qa/report.html
+            .visual-qa/summary.md
+            .visual-qa/spec.json
+            .visual-qa/*.png
+          retention-days: 14
+
+      - name: Comment on the pull request
+        if: always() && hashFiles('.visual-qa/summary.md') != ''
+        uses: actions/github-script@v7
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- visual-qa -->';
+            const link = process.env.ARTIFACT_URL
+              ? `\n\n**[Download the interactive before/after report](${process.env.ARTIFACT_URL})**, then open \`report.html\`.`
+              : '';
+            const body = `${marker}\n${fs.readFileSync('.visual-qa/summary.md', 'utf8')}${link}`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
+            const mine = comments.find((c) => c.body && c.body.startsWith(marker));
+            if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number, body });

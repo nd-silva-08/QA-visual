@@ -1,0 +1,13 @@
+{
+  "name": "visual-qa",
+  "description": "Visual QA for pull requests: before/after architecture and logic diagrams with every added, changed, or removed part highlighted and clickable down to the code lines and the QA checks to run before merging.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Nisitha de Silva",
+    "url": "https://github.com/nd-silva-08"
+  },
+  "homepage": "https://github.com/nd-silva-08/QA-visual",
+  "repository": "https://github.com/nd-silva-08/QA-visual",
+  "license": "MIT",
+  "keywords": ["qa", "code-review", "pull-request", "diagram", "architecture", "before-after", "visual-diff", "skill"]
+}
