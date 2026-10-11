@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseUnifiedDiff } from '../skills/visual-qa/scripts/lib/diff.mjs';
 import {
-  autoLayout, coverage, findOverlaps, matchesUnmapped, resolveCode, summaryMarkdown, validateSpec,
+  autoLayout, checkCodeRefs, coverage, findOverlaps, matchesUnmapped, resolveCode, summaryMarkdown, validateSpec,
 } from '../skills/visual-qa/scripts/lib/spec.mjs';
 
 const detail = (extra = {}) => ({ summary: 's', qa: ['q'], code: [{ path: 'a.js' }], ...extra });
@@ -56,6 +56,37 @@ test('changed parts without details produce warnings; notes do not', () => {
   assert.ok(warnings.some((w) => w.includes('node "a"') && w.includes('detail.summary')));
   assert.ok(warnings.some((w) => w.includes('node "a"') && w.includes('detail.qa')));
   assert.ok(!warnings.some((w) => w.includes('node "n"')));
+});
+
+test('an edge that comes or goes with a new or removed node needs no details of its own', () => {
+  const { errors, warnings } = validateSpec(spec([
+    { id: 'a', title: 'A', col: 0, row: 0 },
+    { id: 'b', title: 'B', col: 1, row: 0 },
+    { id: 'n', title: 'New', col: 2, row: 0, status: 'added', detail: detail() },
+    { id: 'r', title: 'Gone', col: 3, row: 0, status: 'removed', detail: detail() },
+  ], [
+    { id: 'toNew', from: 'a', to: 'n', status: 'added' },
+    { id: 'toGone', from: 'b', to: 'r', status: 'removed' },
+    { id: 'rewired', from: 'a', to: 'b', status: 'added' },
+  ]));
+  assert.deepEqual(errors, []);
+  assert.ok(!warnings.some((w) => w.includes('edge "toNew"') || w.includes('edge "toGone"')), warnings.join('\n'));
+  assert.ok(warnings.some((w) => w.includes('edge "rewired"') && w.includes('detail.summary')), 'a new edge between existing nodes still needs details');
+});
+
+test('unmapped "lines" must name one file and a real range', () => {
+  const { errors } = validateSpec(spec([{ id: 'a', title: 'A', col: 0, row: 0, status: 'changed', detail: detail() }], [], {
+    unmapped: [
+      { path: 'src/', lines: '3', reason: 'r' },
+      { path: 'a.js', lines: 'top', reason: 'r' },
+      { path: 'a.js', lines: '3', side: 'left', reason: 'r' },
+      { path: 'b.js', lines: '3-9', side: 'base', reason: 'fine' },
+    ],
+  }));
+  assert.ok(errors.some((e) => e.includes('"src/"') && e.includes("one file's path")));
+  assert.ok(errors.some((e) => e.includes('"lines" must look like')));
+  assert.ok(errors.some((e) => e.includes('"side" must be')));
+  assert.ok(!errors.some((e) => e.includes('"b.js"')));
 });
 
 test('several diagrams need ids', () => {
@@ -131,18 +162,95 @@ test('resolveCode attaches the hunks a range touches and reports coverage', () =
   assert.deepEqual(cov.unexplained.map((f) => f.path), ['b.js']);
 });
 
+test('coverage names the changes inside an explained file that nothing points at', () => {
+  const files = parseUnifiedDiff(DIFF);
+  const s = spec([
+    { id: 'n1', title: 'One', col: 0, row: 0, status: 'changed', detail: detail({ code: [{ path: 'a.js', lines: '2' }] }) },
+  ]);
+  const { referenced, explainedHunks } = resolveCode(s, files, []);
+  let cov = coverage(s, files, referenced, explainedHunks);
+  assert.deepEqual(cov.explained, ['a.js']);
+  assert.equal(cov.partial.length, 1);
+  assert.deepEqual(cov.partial[0], { path: 'a.js', status: 'modified', changes: 2, unexplained: 1, lines: '21' });
+
+  // Setting the rest aside, with a reason, accounts for it; so does a ref to the whole file.
+  s.unmapped = [{ path: 'a.js', lines: '21', reason: 'logging only' }, { path: 'b.js', lines: '1', reason: 'version bump' }];
+  cov = coverage(s, files, referenced, explainedHunks);
+  assert.deepEqual(cov.partial, []);
+  assert.deepEqual(cov.unexplained, [], 'b.js is set aside line by line');
+  const whole = spec([{ id: 'n', title: 'N', col: 0, row: 0, status: 'changed', detail: detail({ code: [{ path: 'a.js' }] }) }]);
+  const r = resolveCode(whole, files, []);
+  assert.deepEqual(coverage(whole, files, r.referenced, r.explainedHunks).partial, []);
+});
+
+test('code refs are checked against the file: its length, and where a symbol is', () => {
+  const text = ['import x', '', 'export function pay(refund) {', '  return x(refund);', '}', '', 'export const LIMIT = 50;', ''].join('\n');
+  const s = spec([{ id: 'n', title: 'N', col: 0, row: 0, status: 'added', detail: detail({ code: [
+    { path: 'pay.js', lines: '3-5', symbol: 'pay' },
+    { path: 'pay.js', lines: '1-2', symbol: 'Refunds::pay' },
+    { path: 'pay.js', lines: '40-60' },
+    { path: 'pay.js', lines: '6-12' },
+    { path: 'pay.js', symbol: 'refundAll' },
+    { path: 'gone.js', lines: '3', side: 'base', symbol: 'nightly' },
+  ] }) }]);
+  const warnings = [];
+  checkCodeRefs(s, (side, file) => (file === 'pay.js' && side === 'head' ? text : file === 'gone.js' && side === 'base' ? 'a\nb\nfunction nightly() {}\n' : null), warnings);
+  assert.equal(warnings.length, 4, warnings.join('\n'));
+  assert.ok(warnings.some((w) => w.includes('"Refunds::pay" isn\'t in pay.js lines 1-2, or on the line that opens the block they\'re in; it\'s at line 3')));
+  assert.ok(warnings.some((w) => w.includes('pay.js has 7 lines, so lines 40-60 are past its end')));
+  assert.ok(warnings.some((w) => w.includes('lines 6-12 run past its end')));
+  assert.ok(warnings.some((w) => w.includes('"refundAll" isn\'t in pay.js')));
+});
+
+test('a symbol may name the function whose changed lines a ref points at', () => {
+  const text = [
+    'export function settle(',
+    '  refund,',
+    '  options,',
+    ') {',
+    '  if (options.now) {',
+    '    pay(refund);',
+    '  }',
+    '}',
+    '',
+    'export function audit(refund) {',
+    '  log(refund);',
+    '}',
+  ].join('\n');
+  const s = spec([{ id: 'n', title: 'N', col: 0, row: 0, status: 'changed', detail: detail({ code: [
+    { path: 'settle.js', lines: '6', symbol: 'settle' },
+    { path: 'settle.js', lines: '11', symbol: 'audit' },
+    { path: 'settle.js', lines: '11', symbol: 'settle' },
+  ] }) }]);
+  const warnings = [];
+  checkCodeRefs(s, () => text, warnings);
+  assert.equal(warnings.length, 1, warnings.join('\n'));
+  assert.ok(warnings[0].includes('"settle" isn\'t in settle.js lines 11'));
+});
+
 test('summaryMarkdown lists changes, QA checks and unexplained files', () => {
   const data = {
     title: 'T', pr: { number: 7, base: 'a'.repeat(40), head: 'b'.repeat(40) }, risk: 'high', riskNote: 'money',
-    nodes: [{ id: 'a', title: 'Checkout', status: 'changed', detail: { headline: 'Now charges once', qa: [{ check: 'Pay twice', expect: 'one charge' }] } }],
-    edges: [],
-    coverage: { unexplained: [{ path: 'x.js' }], unmapped: [{ path: 'lock', reason: 'lockfile' }] },
+    nodes: [
+      { id: 'a', title: 'Checkout', status: 'changed', detail: { headline: 'Now charges once', qa: [{ check: 'Pay twice', expect: 'one charge' }] } },
+      { id: 'r', title: 'Receipt', status: 'added', detail: { headline: 'Sends a receipt' } },
+    ],
+    edges: [{ id: 'e', from: 'a', to: 'r', status: 'added' }],
+    coverage: {
+      unexplained: [{ path: 'x.js' }],
+      partial: [{ path: 'y.js', changes: 3, unexplained: 2, lines: '4-7', removed: '9' }],
+      unmapped: [{ path: 'lock', reason: 'lockfile' }, { path: 'z.js', lines: '12', reason: 'formatting' }],
+    },
     stats: { files: 2, additions: 3, deletions: 1 },
   };
   const md = summaryMarkdown(data);
   assert.match(md, /PR #7/);
-  assert.match(md, /\*\*Changed\*\* · Checkout — Now charges once/);
+  assert.match(md, /\*\*Changed\*\* · Checkout: Now charges once/);
+  assert.match(md, /Checkout → Receipt: Comes with the new part "Receipt"\./);
   assert.match(md, /- \[ \] Checkout: Pay twice → one charge/);
   assert.match(md, /`x\.js`/);
-  assert.match(md, /Risk: high/);
+  assert.match(md, /Explained only in part:\*\* `y\.js` \(lines 4-7; removed before-lines 9\)/);
+  assert.match(md, /`z\.js` lines 12 \(formatting\)/);
+  assert.match(md, /\*\*Risk: high\.\*\* money/);
+  assert.ok(!md.includes('\u2014'), 'no em dashes');
 });

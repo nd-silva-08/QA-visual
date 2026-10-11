@@ -13,7 +13,7 @@ One self-contained HTML file per PR:
 - **Before / After / Side by side.** Both states share one layout, so nothing jumps around except what the PR changed. New parts are violet, changed parts amber, and removed parts red and dashed. Each also carries a `+ New` / `Δ Changed` / `− Removed` badge, so colour is never the only cue.
 - **Click any changed part** to open what changed in plain words, before → after, how it connects, the **real diff hunks with line numbers** (the lines it points at are highlighted), the QA checks to tick off, and the risk.
 - **A change list** with review progress, keyboard navigation (`J`/`K`), and *Copy QA checklist* as Markdown for your PR review.
-- **Nothing hides.** Every changed file is either linked to a part of the diagram or listed with a reason ("lockfile", "tests"). Anything else is flagged as *changed, not explained*.
+- **Nothing hides.** Every change is either linked to a part of the diagram or listed with a reason ("lockfile", "tests", "formatting"). Anything else is flagged as *changed, not explained*, or *explained only in part* when some changes in a file are covered and others aren't.
 - **Dark and light themes**, phone-friendly, works offline, no tracking.
 - **The code is never retyped by the AI.** The agent writes the story and points at file + line ranges; the renderer pulls the actual hunks from git.
 
@@ -70,9 +70,9 @@ Each PR then gets one summary comment (what changed, risks, a QA checklist, unex
                                                                     and screenshots)
 ```
 
-1. **`collect.mjs`** reads git only. It finds the exact before commit (the merge-base, the same one GitHub diffs against) and the after commit, then prints every changed file with its exact changed lines and the function each change sits in.
+1. **`collect.mjs`** reads git only. It finds the exact before commit (the merge-base, the same one GitHub diffs against) and the after commit, then prints every changed file with its exact changed lines and the function each change sits in (for a new file, what it defines).
 2. **The agent** reads the code at each revision separately, decides whether a logic flow or an architecture view tells the story better, and writes a JSON spec: sections, nodes, edges, statuses, plain-language details, QA checks, and code refs (`path` + `lines`).
-3. **`render.mjs`** validates the spec, attaches the real diff hunks, checks coverage, and writes the HTML. With `--check` it opens the page in headless Chrome and reports wires crossing boxes, labels covering nodes, and overlaps. With `--screenshot` it saves PNGs the agent looks at to fix its own layout.
+3. **`render.mjs`** validates the spec, attaches the real diff hunks, checks every code ref against the file and every change for coverage, and writes the HTML. With `--check` it opens the page in headless Chrome and reports wires crossing boxes, labels covering nodes, and overlaps. With `--screenshot` it saves PNGs the agent looks at to fix its own layout.
 
 The viewer lays out the grid, measures text, and routes every arrow with rounded right-angle bends. Arrows prefer the side facing their target, never pass through boxes or section titles, and spread out where several share a side.
 

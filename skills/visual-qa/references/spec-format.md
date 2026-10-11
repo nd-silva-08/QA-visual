@@ -29,7 +29,7 @@ A single diagram can skip the `diagrams` array: put `sections`, `nodes`, `edges`
 | `theme` | `dark` \| `light` \| `auto` | Starting theme (default `dark`); viewers can switch. |
 | `pr` | object | See below. |
 | `diagrams` | array | 1–3 diagrams, shown as tabs. |
-| `unmapped` | array of `{ path, reason }` | Changed files deliberately left out of every diagram. `path` can be exact, a directory ending in `/`, or a glob (`*`, `**`, `?`). Every other changed file must be referenced from some `detail.code`. |
+| `unmapped` | array of `{ path, lines?, side?, reason }` | Changes deliberately left out of every diagram. Without `lines`, a whole file: `path` can be exact, a directory ending in `/`, or a glob (`*`, `**`, `?`). With `lines` (`"40"` or `"40-88"`, after-side numbers, or before-side with `"side": "base"`), only the changes in those lines of one file, such as a formatting fix next to the real change. Every other change must be referenced from some `detail.code`. |
 
 ### `pr`
 
@@ -72,7 +72,7 @@ Without `pr.base` / `pr.head` (or with `--no-git`), code only shows for refs tha
 | `tech` | Optional technical tag in mono: `POST /refunds`, `refunds table`, `Stripe`. |
 | `shape` | `box` (default), `decision` (diamond: a check or branch), or `note` (free text with optional `bullets`). |
 | `status` | `unchanged` (default), `added`, `changed`, or `removed`. |
-| `before` | For `changed` nodes: the fields that differed before the PR, e.g. `{ "sub": "Every refund waits here" }`. The Before view shows them. |
+| `before` | For `changed` nodes: the fields that differed before the PR, e.g. `{ "sub": "Every refund waits here" }`. The Before view shows them. Only the fields you list change: any you leave out, `tech` and `title` included, show their after text in Before too, so list every field that was different. |
 | `section` | Section id (default: the first). |
 | `col`, `row` | Grid position. `col` is 0-based and may be fractional (e.g. `2.5`); `row` is a whole number within the section. Columns line up across all sections. Omit both on every node of a section to get an automatic left-to-right layout. |
 | `span` | Width in columns (default 1). |
@@ -94,7 +94,7 @@ Without `pr.base` / `pr.head` (or with `--no-git`), code only shows for refs tha
 | `status` | `unchanged`, `added`, `changed`, `removed`. |
 | `before` | For `changed` edges: `{ "label": "next morning", "style": "dashed" }`. |
 | `fromSide`, `toSide` | Force a side: `left`, `right`, `top`, `bottom`. Usually unnecessary; use them to fix a tangled route. |
-| `detail` | As for nodes. |
+| `detail` | As for nodes. Expected on every added, changed, or removed edge, except one that comes or goes with a new or removed node: the node's details tell that story, and the report says the edge comes (or goes) with it. Write details for such an edge only when it adds something, like a new call to an outside service. |
 
 Status rules the validator enforces:
 - An edge touching an `added` node must be `added`; an edge touching a `removed` node must be `removed`.
@@ -124,12 +124,12 @@ Status rules the validator enforces:
 | `path` | Repo-relative path, as git prints it. For a renamed file, either the old or the new path works. |
 | `lines` | `"40"` or `"40-88"`. The drawer shows the diff hunks that change a line in this range and highlights the range. Without `lines` it shows all of the file's hunks (or only those mentioning `symbol`). |
 | `side` | `head` (default: after-side line numbers) or `base` (before-side numbers, for code that was deleted). |
-| `symbol` | Function or class name, for the reader (and as a hunk filter when `lines` is missing). |
+| `symbol` | Function or class name, for the reader (and as a hunk filter when `lines` is missing). The renderer checks that it's in the file and, with `lines`, in those lines or on the line that opens the block they sit in (the function's signature). Put descriptions in `note`, not here. |
 | `note` | A few words on why this place matters. |
 | `patch` | Inline unified-diff text (string or array of lines). **Only** for demos and repos without git; normal runs read hunks from git. |
 
-The renderer adds the `hunks` and the file stats itself, and warns when a range touches no change.
+The renderer adds the `hunks` and the file stats itself. It warns when a range touches no change, runs past the end of the file, or doesn't hold its `symbol`. Inside a new file every line is a change, so pick ranges there from the definitions `collect.mjs` lists.
 
 ## What the renderer adds
 
-`files` (the diff hunks for every referenced file), `coverage` (`unmapped` plus the changed files nobody explains), `stats`, and `generated`. Don't write these yourself.
+`files` (the diff hunks for every referenced file), `coverage` (`unmapped`, the changed files nobody explains, and the files explained only in `partial`, with the lines nothing points at), `stats`, and `generated` (with `links`, which says whether the before and after commits are on the remote, so "Open" links to them work). Don't write these yourself.

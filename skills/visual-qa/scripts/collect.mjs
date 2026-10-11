@@ -5,7 +5,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from './lib/args.mjs';
-import { changedRanges, formatRanges, parseUnifiedDiff } from './lib/diff.mjs';
+import { changedRanges, formatRanges, outline, parseUnifiedDiff } from './lib/diff.mjs';
 import {
   currentBranch, defaultBranch, diffText, ghPrView, git, hasGh, mergeBase, remoteUrl, repoRoot,
   resolveCommit, toWebUrl, untrackedFiles,
@@ -141,6 +141,8 @@ function main() {
       deletions: f.deletions,
       changed: changedRanges(f.hunks),
       hunks: f.hunks.map((hk) => ({ old: [hk.oldStart, hk.oldLines], new: [hk.newStart, hk.newLines], context: hk.header || undefined })),
+      // A new file's hunks carry no function context, so list what it defines instead.
+      defines: f.status === 'added' && !f.binary ? newDefinitions(f) : undefined,
     })),
     untracked: worktree ? untrackedFiles(root) : undefined,
     specPr: {
@@ -165,6 +167,12 @@ function main() {
     return;
   }
   console.log(digest(ctx, path.relative(process.cwd(), out) || out));
+}
+
+function newDefinitions(f) {
+  const lines = f.hunks.flatMap((hk) => hk.lines.filter((l) => l[0] === '+').map((l) => [l[2], l[3]]));
+  const found = outline(lines);
+  return found.length ? found : undefined;
 }
 
 const LETTER = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R', copied: 'C' };
@@ -196,7 +204,9 @@ function digest(ctx, outPath) {
         const name = path.posix.basename(f.path);
         const was = f.oldPath ? `  (was ${f.oldPath})` : '';
         const counts = f.binary ? 'binary' : `+${f.additions} −${f.deletions}`;
-        const ctxs = [...new Set(f.hunks.map((hk) => (hk.context || '').trim()).filter(Boolean))];
+        const ctxs = f.defines
+          ? f.defines.map((d) => `${d.label} :${d.line}`)
+          : [...new Set(f.hunks.map((hk) => (hk.context || '').trim()).filter(Boolean))];
         const where = ctxs.length ? `  ⟶ ${ctxs.slice(0, 4).map((c) => (c.length > 60 ? c.slice(0, 57) + '…' : c)).join(' | ')}${ctxs.length > 4 ? ` (+${ctxs.length - 4})` : ''}` : '';
         const cap = (rs) => formatRanges(rs.slice(0, 8)) + (rs.length > 8 ? ', …' : '');
         let ranges = '';
@@ -216,6 +226,7 @@ function digest(ctx, outPath) {
   L.push(`Wrote ${outPath}`);
   L.push(`Before code: git show ${short(ctx.base.sha)}:<path>    After code: ${ctx.worktree ? 'the working tree' : `git show ${short(ctx.head.sha)}:<path>`}`);
   L.push(`"lines" are changed after-side lines: use them for detail.code "lines". "removed before-lines" need "side": "base".`);
+  if (ctx.files.some((f) => f.defines)) L.push('For a new file, ⟶ lists what it defines and the line each starts on (all of them are in the JSON).');
   L.push(`Spec "pr" block: ${JSON.stringify(ctx.specPr)}`);
   return L.join('\n');
 }

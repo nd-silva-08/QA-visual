@@ -50,8 +50,9 @@ Anchor the change with one hop of unchanged context on each side (what calls it,
 
 - For each changed file and hunk, find the node or edge it implements, and add a code ref with `lines` set to the changed after-side lines the digest lists. For deleted code use `"side": "base"` with the removed before-side lines.
 - One hunk can back several parts; one part can cite several files.
-- Files that truly don't belong go in `unmapped` with an honest reason.
-- The renderer warns about changed files nobody explains, and about ranges that touch no change. Fix both.
+- In a new file every line is a change, so a range there always "touches the diff". Take its lines from the definitions `collect.mjs` lists for the file, and name the definition in `symbol`; the renderer checks it's there.
+- Files that truly don't belong go in `unmapped` with an honest reason. So can single changes inside an explained file (an import, a renamed variable, a formatting fix): an `unmapped` entry with that file's `path` and the `lines`.
+- The renderer warns about changed files nobody explains, changes inside a file nobody points at, and ranges that touch no change or don't hold their symbol. Fix all of them.
 
 ## 7. Write the details
 

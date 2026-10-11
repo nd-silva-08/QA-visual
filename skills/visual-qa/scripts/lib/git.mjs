@@ -46,6 +46,20 @@ export function currentBranch(cwd) {
   return b && b !== 'HEAD' ? b : null;
 }
 
+/**
+ * Whether the commit is on a remote, judged from the remote-tracking branches and fetched PR heads
+ * as of the last fetch or push. A commit that is only local can't be opened on the web yet.
+ */
+export function onRemote(sha, cwd) {
+  const out = git(['for-each-ref', '--count=1', '--format=%(refname)', '--contains', sha, 'refs/remotes', 'refs/visual-qa'], { cwd, allowFail: true });
+  return !!(out && out.trim());
+}
+
+/** A file's text at a commit, or null when it isn't there or can't be read. */
+export function fileAt(sha, file, cwd) {
+  return git(['-c', 'core.quotePath=false', 'show', `${sha}:${file}`], { cwd, allowFail: true });
+}
+
 export function remoteUrl(cwd) {
   const out = git(['config', '--get', 'remote.origin.url'], { cwd, allowFail: true });
   return out ? out.trim() : null;

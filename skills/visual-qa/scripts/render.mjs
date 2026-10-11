@@ -8,11 +8,11 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from './lib/args.mjs';
 import { buildHtml, withoutWebFonts } from './lib/build.mjs';
 import { findChrome, layoutReport, screenshot } from './lib/chrome.mjs';
-import { parseUnifiedDiff } from './lib/diff.mjs';
-import { diffText, mergeBase, remoteUrl, repoRoot, resolveCommit, toWebUrl } from './lib/git.mjs';
+import { hunkTouches, parseRange, parseUnifiedDiff } from './lib/diff.mjs';
+import { diffText, fileAt, mergeBase, onRemote, remoteUrl, repoRoot, resolveCommit, toWebUrl } from './lib/git.mjs';
 import {
-  autoLayout, coverage, diagramsOf, diffStats, findOverlaps, forEachItem, matchesUnmapped, resolveCode,
-  summaryMarkdown, validateSpec,
+  autoLayout, checkCodeRefs, coverage, diagramsOf, diffStats, findOverlaps, forEachItem, matchesUnmapped, missingText,
+  resolveCode, summaryMarkdown, validateSpec,
 } from './lib/spec.mjs';
 import { VERSION } from './lib/version.mjs';
 
@@ -85,6 +85,8 @@ async function main() {
   const pr = data.pr;
   let diffFiles = null;
   let worktree = false;
+  let read = null;
+  let openLinks = null;
   if (!args['no-git'] && (pr.base || pr.head)) {
     let root;
     try {
@@ -109,18 +111,42 @@ async function main() {
       const web = toWebUrl(remoteUrl(root));
       if (web) pr.repoUrl = web;
     }
+    // "Open" links go to the remote at these commits, so they only work once the commits are
+    // there. A PR's commits are; for anything else, look at what was last fetched or pushed.
+    if (pr.repoUrl) {
+      const isPr = pr.number != null && pr.number !== '';
+      openLinks = { base: isPr || onRemote(mb, root), head: !worktree && (isPr || onRemote(headSha, root)) };
+      const missing = [!openLinks.base && `the before commit ${short(mb)}`, !worktree && !openLinks.head && `the after commit ${short(headSha)}`].filter(Boolean);
+      if (missing.length) notes.push(`${missing.join(' and ')} ${missing.length === 1 ? "isn't" : "aren't"} on the remote yet, as far as this clone knows, so the report leaves out "Open" links to ${missing.length === 1 ? 'it' : 'them'}. Push (or fetch, if ${missing.length === 1 ? "it's" : "they're"} there already), then render again to add them.`);
+    }
+    const byPath = new Map(diffFiles.map((f) => [f.path, f]));
+    read = (side, file) => {
+      const f = byPath.get(file);
+      if (f && f.binary) return null;
+      if (side === 'base') return fileAt(mb, (f && f.oldPath) || file, root);
+      if (!worktree) return fileAt(headSha, file, root);
+      try { return readFileSync(path.join(root, file), 'utf8'); } catch (_) { return null; }
+    };
   } else if (!args['no-git']) {
     notes.push('The spec has no pr.base / pr.head, so code is shown only for inline "patch" refs.');
   }
 
-  const { files, referenced, inlineFiles } = resolveCode(data, diffFiles, warnings);
-  const cov = coverage(data, diffFiles, referenced);
+  const { files, referenced, explainedHunks, inlineFiles } = resolveCode(data, diffFiles, warnings);
+  if (read) checkCodeRefs(data, read, warnings);
+  const cov = coverage(data, diffFiles, referenced, explainedHunks);
   if (cov.unexplained.length) {
     warnings.push(`${cov.unexplained.length} changed file${cov.unexplained.length === 1 ? ' is' : 's are'} not linked from any node or edge and not listed in "unmapped": ${cov.unexplained.map((f) => f.path).join(', ')}`);
   }
+  for (const p of cov.partial) {
+    warnings.push(`${p.path}: ${p.unexplained} of its ${p.changes} changes ${p.unexplained === 1 ? "isn't" : "aren't"} linked from any node or edge (${missingText(p)}). Point a code ref at them, or set them aside with "unmapped" lines and a reason.`);
+  }
   if (diffFiles) {
     for (const u of cov.unmapped) {
-      if (!diffFiles.some((f) => matchesUnmapped(f.path, u))) notes.push(`unmapped "${u.path}" doesn't match any changed file.`);
+      const f = diffFiles.find((x) => matchesUnmapped(x.path, u) || (u.lines && x.oldPath === u.path));
+      if (!f) notes.push(`unmapped "${u.path}" doesn't match any changed file.`);
+      else if (u.lines && !f.hunks.some((hk) => hunkTouches(hk, parseRange(u.lines), u.side))) {
+        notes.push(`unmapped "${u.path}" lines ${u.lines}${u.side === 'base' ? ' (before)' : ''} don't touch any change in that file.`);
+      }
     }
   }
 
@@ -134,9 +160,13 @@ async function main() {
 
   data.version = 1;
   data.files = files;
-  data.coverage = { unmapped: cov.unmapped, unexplained: cov.unexplained };
+  data.coverage = { unmapped: cov.unmapped, unexplained: cov.unexplained, partial: cov.partial };
   data.stats = diffFiles ? diffStats(diffFiles) : isObj(pr.stats) ? pr.stats : inlineFiles.length ? diffStats(inlineFiles) : null;
-  data.generated = { tool: 'visual-qa', version: VERSION, at: new Date().toISOString(), ...(worktree ? { worktree: true } : {}) };
+  data.generated = {
+    tool: 'visual-qa', version: VERSION, at: new Date().toISOString(),
+    ...(worktree ? { worktree: true } : {}),
+    ...(openLinks ? { links: openLinks } : {}),
+  };
   delete data.unmapped;
 
   const out = path.resolve(args.out || specPath.replace(/\.json$/i, '') + '.html');
@@ -206,7 +236,8 @@ async function main() {
   console.log(`  ${ds.length} diagram${ds.length === 1 ? '' : 's'} · ${parts} parts · ${links} links · ${total} change${total === 1 ? '' : 's'} (${changes.added} new, ${changes.changed} changed, ${changes.removed} removed)`);
   if (data.stats) {
     const set = cov.unmapped.length ? ` · ${cov.unmapped.length} set aside` : '';
-    const expl = diffFiles ? ` · ${cov.explained.length} explained${set} · ${cov.unexplained.length} unexplained` : '';
+    const part = cov.partial.length ? ` (${cov.partial.length} only in part)` : '';
+    const expl = diffFiles ? ` · ${cov.explained.length} explained${part}${set} · ${cov.unexplained.length} unexplained` : '';
     console.log(`  ${data.stats.files} file${data.stats.files === 1 ? '' : 's'} changed, +${data.stats.additions} −${data.stats.deletions}${expl}`);
   }
   if (args.summary) console.log(`  summary: ${rel(path.resolve(args.summary))}`);

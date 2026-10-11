@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { hunkTouches, parsePatchHunks, parseRange, parseUnifiedDiff, unquote } from '../skills/visual-qa/scripts/lib/diff.mjs';
+import { hunkTouches, outline, parsePatchHunks, parseRange, parseUnifiedDiff, unquote } from '../skills/visual-qa/scripts/lib/diff.mjs';
 
 const SAMPLE = `diff --git a/src/a.js b/src/a.js
 index 1111111..2222222 100644
@@ -96,4 +96,35 @@ test('parseRange accepts single lines and ranges', () => {
   assert.deepEqual(parseRange('40'), [40, 40]);
   assert.deepEqual(parseRange('88-40'), [40, 88]);
   assert.equal(parseRange('forty'), null);
+});
+
+test('outline finds the definitions new code starts, in several languages', () => {
+  const src = [
+    "import { mail } from './mail.js';",
+    "const fs = require('fs');",
+    'export async function pay(refund) {',
+    '  const total = 1;',
+    '}',
+    'export const LIMIT = 50;',
+    'class Refunds:',
+    '    def approve(self):',
+    '        def inner(): pass',
+    'func (r *Repo) Save(ctx context.Context) error {',
+    'pub(crate) fn decide() {}',
+    'impl<T> Store for Cache<T> where T: Clone {',
+    '    pub fn get(&self) {}',
+    'type(value)',
+    'type Props = { a: string }',
+  ];
+  assert.deepEqual(outline(src.map((t, i) => [i + 1, t])), [
+    { line: 3, label: 'function pay' },
+    { line: 6, label: 'const LIMIT' },
+    { line: 7, label: 'class Refunds' },
+    { line: 8, label: 'def approve' },
+    { line: 10, label: 'func Save' },
+    { line: 11, label: 'fn decide' },
+    { line: 12, label: 'impl<T> Store for Cache<T>' },
+    { line: 13, label: 'fn get' },
+    { line: 15, label: 'type Props' },
+  ]);
 });

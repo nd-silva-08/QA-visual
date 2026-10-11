@@ -2,46 +2,46 @@
 
 Refunds under $50 from low-risk customers are now approved and paid on the spot instead of waiting for finance. Everything else still goes to a person, now with a risk score attached. The Slack ping and the nightly receipt job are gone: receipts are emailed the moment money moves.
 
-**Risk: medium** — Money now leaves without a human check for small refunds, so the $50 limit, the risk threshold, and the fail-closed path all need testing.
+**Risk: medium.** Money now leaves without a human check for small refunds, so the $50 limit, the risk threshold, and the fail-closed path all need testing.
 
 **Refund flow** (3 new, 3 changed, 2 removed)
-- **Changed** · Refund request — Two new columns: the risk score and whether it was auto-approved.
-- **New** · Risk check — New: every refund gets a fraud score before anything else happens.
-- **New** · Small and low risk? — New decision: is it under $50, low risk, and the first refund this month? ⚠️ high risk
-- **New** · Approved right away — New: small, low-risk refunds are marked approved and paid immediately. ⚠️ high risk
-- **Removed** · Slack ping — Removed: finance no longer gets a Slack message per refund.
-- **Changed** · Finance review — The queue now only gets refunds that need a person, with their risk score.
-- **Changed** · Receipt email — Receipts go out immediately instead of the next morning.
-- **Removed** · Nightly receipt job — Removed: the 2 a.m. batch of receipt emails.
+- **Changed** · Refund request: Two new columns: the risk score and whether it was auto-approved.
+- **New** · Risk check: New: every refund gets a fraud score before anything else happens.
+- **New** · Small and low risk?: New decision: is it under $50, low risk, and the first refund this month? ⚠️ high risk
+- **New** · Approved right away: New: small, low-risk refunds are marked approved and paid immediately. ⚠️ high risk
+- **Removed** · Slack ping: Removed: finance no longer gets a Slack message per refund.
+- **Changed** · Finance review: The queue now only gets refunds that need a person, with their risk score.
+- **Changed** · Receipt email: Receipts go out immediately instead of the next morning.
+- **Removed** · Nightly receipt job: Removed: the 2 a.m. batch of receipt emails.
 
 <details><summary>9 changed connections</summary>
 
-- **New** · Refund request → Risk check — Every new refund now goes through the risk check first.
-- **New** · Risk check → Small and low risk? — The risk score feeds straight into the small-and-low-risk decision.
-- **New** · Small and low risk? → Approved right away (Yes) — When all three conditions hold, the refund skips finance entirely.
-- **New** · Small and low risk? → Finance review (No) — Anything that fails the rule goes to a person, as every refund did before.
-- **Removed** · Refund request → Finance review (every refund) — Refunds no longer go straight into the review queue; they pass the risk check and rule first.
-- **Removed** · Finance review → Slack ping (pings) — Queuing a refund no longer posts to Slack.
-- **New** · Approved right away → Payments (pays now) — Auto-approved refunds go straight to the payout.
-- **Changed** · Payments → Receipt email (right away) — The payout now sends the receipt itself.
-- **Removed** · Nightly receipt job → Receipt email (02:00) — The nightly batch no longer sends receipts (it was deleted).
+- **New** · Refund request → Risk check: Every new refund now goes through the risk check first.
+- **New** · Risk check → Small and low risk?: The risk score feeds straight into the small-and-low-risk decision.
+- **New** · Small and low risk? → Approved right away (Yes): When all three conditions hold, the refund skips finance entirely.
+- **New** · Small and low risk? → Finance review (No): Anything that fails the rule goes to a person, as every refund did before.
+- **Removed** · Refund request → Finance review (every refund): Refunds no longer go straight into the review queue; they pass the risk check and rule first.
+- **Removed** · Finance review → Slack ping (pings): Queuing a refund no longer posts to Slack.
+- **New** · Approved right away → Payments (pays now): Auto-approved refunds go straight to the payout.
+- **Changed** · Payments → Receipt email (right away): The payout now sends the receipt itself.
+- **Removed** · Nightly receipt job → Receipt email (02:00): The nightly batch no longer sends receipts (it was deleted).
 
 </details>
 
 **Services** (1 new, 3 changed, 2 removed)
-- **Changed** · Shop app — The refund screen now shows the real outcome instead of a generic promise.
-- **Changed** · Refunds logic — Now calls the risk service and pays small refunds itself.
-- **Changed** · Postgres — The refunds table gets two columns and an index.
-- **Removed** · Cron worker — The refund receipt job is gone, so the worker no longer touches refunds.
-- **Removed** · Slack — Refunds no longer post to Slack.
-- **New** · RiskScore — A new outside dependency.
+- **Changed** · Shop app: The refund screen now shows the real outcome instead of a generic promise.
+- **Changed** · Refunds logic: Now calls the risk service and pays small refunds itself.
+- **Changed** · Postgres: The refunds table gets two columns and an index.
+- **Removed** · Cron worker: The refund receipt job is gone, so the worker no longer touches refunds.
+- **Removed** · Slack: Refunds no longer post to Slack.
+- **New** · RiskScore: A new outside dependency.
 
 <details><summary>4 changed connections</summary>
 
-- **New** · Refunds logic → RiskScore (score lookup) — New call on every refund request.
-- **New** · Refunds logic → Email sender (receipt) — Receipts are now sent directly when a refund is paid.
-- **Removed** · Refunds logic → Slack — The Slack ping is gone.
-- **Removed** · Cron worker → Email sender (nightly batch) — The nightly batch no longer sends receipts.
+- **New** · Refunds logic → RiskScore (score lookup): New call on every refund request.
+- **New** · Refunds logic → Email sender (receipt): Receipts are now sent directly when a refund is paid.
+- **Removed** · Refunds logic → Slack: The Slack ping is gone.
+- **Removed** · Cron worker → Email sender (nightly batch): The nightly batch no longer sends receipts.
 
 </details>
 

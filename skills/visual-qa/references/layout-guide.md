@@ -23,6 +23,7 @@ You place nodes on a grid; the viewer measures text, sizes boxes, and routes eve
                    [Finance review]     • score below 30
 ```
 
+- A decision has four corners and one of them is the way in, so it reads best with two outcomes. When a check has three (allowed / not yet / refused), split it into two decisions in a row, each with two outcomes, rather than sending two wires out of one corner. Wires that leave the same side of a node run side by side, and three or more bunched together are hard to follow even when the layout check passes.
 - A loop back to an earlier step (a retry, or "try again") runs below or to the left. Set `fromSide` / `toSide` if the automatic choice isn't the one you want.
 - Supporting systems (a store, an external API, a person who decides) sit beside the node that uses them, often joined by a `dashed` edge.
 
@@ -33,7 +34,7 @@ You place nodes on a grid; the viewer measures text, sizes boxes, and routes eve
 - **At most about three wires per side** of a box. More than that usually means the node does too much: split it.
 - **Notes** (`"shape": "note"`) explain a rule. Put them in the empty cell under the edge they explain and set `"attach": "<edge id>"` for a dotted leader.
 - **Labels** should be one to three words. Use `\n` to break a longer one.
-- **Removed and added parts:** removed nodes keep their spot; they show in Before and appear faded in After. New nodes go in cells that are empty in Before. A new node may take a removed node's exact cell, in which case the faded copy is dropped.
+- **Removed and added parts:** removed nodes keep their spot; they show in Before and appear faded in After. New nodes go in cells that are empty in Before. A new node may take a removed node's exact cell, in which case the faded copy is dropped. A section whose parts are all new reads "Nothing here before this change" in Before.
 - More than about 14 nodes or 18 arrows is hard to read. Split it into two diagrams, for example an overview plus the detail of the riskiest path.
 
 ## Fixing what `--check` reports

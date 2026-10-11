@@ -165,6 +165,46 @@ export function changedRanges(hunks) {
 
 export const formatRanges = (ranges) => ranges.map(([a, b]) => (a === b ? `${a}` : `${a}-${b}`)).join(', ');
 
+// A definition as most languages start one: optional modifiers, a keyword, then usually a name.
+const DEF_RE = /^(?:(?:export|default|pub(?:\([^)]*\))?|public|private|protected|internal|static|async|unsafe|abstract|final|sealed|open|override|inline|declare|extern(?:\s+"[^"]*")?|const(?=\s+fn\b))\s+)*(fn|function\*?|def|func|fun|class|interface|type|enum|struct|union|trait|impl|mod|module|namespace|object|protocol|extension|record|macro_rules!|const|let|var|val|static)(?=[\s(<{!]|$)\s*(.*)$/;
+// Keywords that, indented, are still definitions (methods, nested types) rather than local variables.
+const NESTED_KINDS = new Set(['fn', 'function', 'function*', 'def', 'func', 'fun', 'class', 'interface', 'enum', 'struct', 'trait', 'impl']);
+
+/**
+ * The definitions a block of new code starts, as a best guess that needs no parser: lines at the
+ * top level (or one indent in, for methods) that open with a definition keyword. `lines` is a list
+ * of [lineNumber, text]; returns [{ line, label }] such as { line: 26, label: 'fn focus' }.
+ */
+export function outline(lines, { max = 200 } = {}) {
+  const out = [];
+  for (const [line, raw] of lines) {
+    if (out.length >= max) break;
+    const text = String(raw).replace(/\s+$/, '');
+    const indent = /^[ \t]*/.exec(text)[0];
+    const depth = indent.replace(/\t/g, '    ').length;
+    if (depth > 4) continue;
+    const m = DEF_RE.exec(text.slice(indent.length));
+    if (!m) continue;
+    const kind = m[1];
+    if (depth > 0 && !NESTED_KINDS.has(kind)) continue;
+    let rest = m[2].trim();
+    if (['const', 'let', 'var', 'val'].includes(kind) && /=\s*(?:require|import)\s*\(/.test(rest)) continue; // an import
+    if (kind === 'func') rest = rest.replace(/^\([^)]*\)\s*/, ''); // a Go method's receiver
+    let label;
+    if (kind === 'impl') {
+      const what = rest.replace(/\s*(?:\{.*|where\b.*)$/, '');
+      label = `impl${what.startsWith('<') ? '' : ' '}${what}`.trim();
+    } else {
+      const name = /^[A-Za-z_$][\w$]*/.exec(rest.replace(/^(?:mut\s+)/, ''));
+      if (!name && kind !== 'function' && kind !== 'function*') continue; // `type(` and similar are calls
+      rest = name ? name[0] : '(anonymous)';
+      label = `${kind} ${rest}`;
+    }
+    out.push({ line, label: label.length > 60 ? label.slice(0, 57) + '…' : label });
+  }
+  return out;
+}
+
 export function parseRange(v) {
   const m = /^\s*(\d+)(?:\s*[-–]\s*(\d+))?\s*$/.exec(String(v ?? ''));
   if (!m) return null;
@@ -184,7 +224,7 @@ function splitDiffGitLine(rest) {
     const m = /^("(?:[^"\\]|\\.)*")\s+("(?:[^"\\]|\\.)*"|\S.*)$/.exec(rest);
     return m ? [unquote(m[1]).replace(/^a\//, ''), unquote(m[2]).replace(/^b\//, '')] : null;
   }
-  // Unquoted: "a/<p> b/<p>" — only trust it when both halves are equal (the common case).
+  // Unquoted: "a/<p> b/<p>". Only trust it when both halves are equal (the common case).
   const half = (rest.length - 1) / 2;
   if (Number.isInteger(half)) {
     const a = rest.slice(0, half);

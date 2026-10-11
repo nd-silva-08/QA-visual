@@ -121,6 +121,54 @@ test('collect maps the branch against its merge-base', () => {
   assert.equal(ctx.stats.files, 5);
 });
 
+test('collect lists what a new file defines, since its hunks carry no function names', () => {
+  const { out, ctx } = collect();
+  const rules = ctx.files.find((f) => f.path === 'src/rules.js');
+  assert.deepEqual(rules.defines, [{ line: 1, label: 'const smallAndSafe' }]);
+  assert.match(out, /A rules\.js .*⟶ const smallAndSafe :1/);
+  assert.equal(ctx.files.find((f) => f.path === 'src/decide.js').defines, undefined, 'only new files');
+});
+
+test('"Open" links are left out until the commits are on the remote', () => {
+  const { ctx } = collect();
+  const specPath = path.join(dir, '.visual-qa/links.json');
+  writeFileSync(specPath, JSON.stringify(specFrom(ctx, { pr: { ...ctx.specPr, repoUrl: 'https://example.com/acme/shop' } })));
+  let r = node(RENDER, [specPath]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /aren't on the remote yet, as far as this clone knows, so the report leaves out "Open" links/);
+  let data = embedded(readFileSync(path.join(dir, '.visual-qa/links.html'), 'utf8'));
+  assert.deepEqual(data.generated.links, { base: false, head: false });
+
+  // Once a remote-tracking branch holds both commits, the links are back.
+  git('update-ref', 'refs/remotes/origin/main', 'main');
+  git('update-ref', 'refs/remotes/origin/feature', 'feature');
+  try {
+    r = node(RENDER, [specPath]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stdout, /on the remote yet/);
+    data = embedded(readFileSync(path.join(dir, '.visual-qa/links.html'), 'utf8'));
+    assert.deepEqual(data.generated.links, { base: true, head: true });
+  } finally {
+    git('update-ref', '-d', 'refs/remotes/origin/main');
+    git('update-ref', '-d', 'refs/remotes/origin/feature');
+  }
+});
+
+test('render checks code refs against the files, and coverage change by change', () => {
+  const { ctx } = collect();
+  const s = specFrom(ctx);
+  s.nodes[1].detail.code = [{ path: 'src/rules.js', lines: '4-9', symbol: 'smallAndSafe' }];
+  s.nodes[0].detail.code = [{ path: 'src/decide.js', lines: '4-7', symbol: 'refundAll' }];
+  const specPath = path.join(dir, '.visual-qa/refs.json');
+  writeFileSync(specPath, JSON.stringify(s));
+  const r = node(RENDER, [specPath]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /src\/rules\.js has 1 line, so lines 4-9 are past its end/);
+  assert.match(r.stdout, /"refundAll" isn't in src\/decide\.js/);
+  const data = embedded(readFileSync(path.join(dir, '.visual-qa/refs.html'), 'utf8'));
+  assert.ok(Array.isArray(data.coverage.partial));
+});
+
 test('render pulls real hunks from git, reports coverage, and escapes content', () => {
   const { ctx } = collect();
   const specPath = path.join(dir, '.visual-qa/spec.json');

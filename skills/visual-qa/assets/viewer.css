@@ -254,6 +254,10 @@ code { font-family: var(--font-mono); }
 .vqa-wires { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .vqa-sep { position: absolute; height: 0; border-top: 1px solid var(--hair); }
 .vqa-sec { position: absolute; display: flex; align-items: baseline; gap: 14px; white-space: nowrap; }
+.vqa-sec-empty {
+  position: absolute; display: flex; align-items: center; justify-content: center;
+  color: var(--soft); font-size: 13.5px; pointer-events: none;
+}
 .vqa-sec-num { font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .vqa-sec-title { font-size: 23px; font-weight: 600; letter-spacing: -0.012em; color: var(--ink); }
 .vqa-sec-sub { margin-left: 34px; font-size: 15px; color: var(--muted); }

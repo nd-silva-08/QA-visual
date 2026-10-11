@@ -107,7 +107,7 @@
       generated: r.generated || {},
       stats: r.stats || pr.stats || null,
       files: r.files && typeof r.files === 'object' ? r.files : {},
-      coverage: r.coverage || { unmapped: Array.isArray(r.unmapped) ? r.unmapped : [], unexplained: [] },
+      coverage: r.coverage || { unmapped: Array.isArray(r.unmapped) ? r.unmapped : [], unexplained: [], partial: [] },
     };
     const list = Array.isArray(r.diagrams) && r.diagrams.length ? r.diagrams : [r];
     rep.diagrams = list.map((d, i) => normDiagram(d, i, list.length, rep.title));
@@ -200,6 +200,30 @@
       return `${a.title} → ${b.title}${label ? ` (${label})` : ''}`;
     }
     return textOf(it, it.status === 'removed' ? 'before' : 'after').title || it.title;
+  }
+
+  // An edge with no details of its own that comes or goes with a new or removed node says so.
+  function impliedNote(d, it) {
+    if (it.kind !== 'edge' || str(it.detail.headline) || str(it.detail.summary)) return '';
+    if (it.status !== 'added' && it.status !== 'removed') return '';
+    const end = [d.items.get(it.from), d.items.get(it.to)].find((n) => n && n.status === it.status);
+    return end ? `${it.status === 'added' ? 'Comes with the new part' : 'Goes with the removed part'} “${end.title}”.` : '';
+  }
+
+  // The changes in a partly explained file that nothing links to.
+  function missingText(f) {
+    return [f.lines ? `lines ${str(f.lines)}` : '', f.removed ? `removed before-lines ${str(f.removed)}` : ''].filter(Boolean).join('; ');
+  }
+
+  // Sections that have parts but show none in this mode: all new (Before) or all removed (the
+  // clean After of side by side).
+  function emptySections(d, mode) {
+    const gone = mode === 'before' ? 'added' : mode === 'after-clean' ? 'removed' : null;
+    if (!gone) return [];
+    return d.sections.filter((sec) => {
+      const ns = d.nodes.filter((n) => n.section === sec.id);
+      return ns.length && ns.every((n) => n.status === gone);
+    }).map((sec) => sec.id);
   }
 
   function changeList(d) {
@@ -793,12 +817,21 @@
     const view = mode === 'before' ? 'before' : 'after';
     const cv = h('div', { class: 'vqa-canvas', 'data-mode': mode, style: { width: lay.width + 'px', height: lay.height + 'px' } });
 
+    const empty = new Set(emptySections(d, mode));
     for (const sec of lay.sections) {
       if (sec.sep != null) cv.append(h('div', { class: 'vqa-sep', style: { top: sec.sep + 'px', left: L.padX + 'px', width: lay.width - 2 * L.padX + 'px' } }));
       if (sec.title) {
         const hd = sectionHeaderEl(sec);
         Object.assign(hd.style, { top: sec.top + 'px', left: L.padX + 'px' });
         cv.append(hd);
+      }
+      if (empty.has(sec.id)) {
+        const top = sec.headerBox ? sec.top + L.sectionHeader : sec.top;
+        cv.append(h('div', {
+          class: 'vqa-sec-empty',
+          text: mode === 'before' ? 'Nothing here before this change' : 'Nothing here after this change',
+          style: { top: top + 'px', height: Math.max(24, sec.bottom - top) + 'px', left: L.padX + 'px', width: lay.width - 2 * L.padX + 'px' },
+        }));
       }
     }
 
@@ -1001,7 +1034,7 @@
       const ol = h('ol', { class: 'vqa-ledger-list' });
       for (const c of changes) {
         const reviewed = state.reviewed.has(d.id + ':' + c.id);
-        const line = str(c.detail.headline) || firstSentence(c.detail.summary);
+        const line = str(c.detail.headline) || firstSentence(c.detail.summary) || impliedNote(d, c);
         ol.append(h('li', null, h('button', {
           class: 'vqa-li' + (state.selected === c.id ? ' is-selected' : ''), type: 'button', 'data-id': c.id,
           onclick: () => select(c.id, { scroll: true }),
@@ -1019,8 +1052,11 @@
     const cov = report.coverage || {};
     const fileList = (title, files, warn) => h('div', { class: 'vqa-ledger-sec' + (warn ? ' is-warn' : '') },
       h('h3', { text: `${title} (${files.length})` }),
-      h('ul', { class: 'vqa-files' }, files.map((f) => h('li', null, h('code', { text: str(f.path) }), f.reason ? str(f.reason) : warn ? 'Not linked to any part of the diagram.' : null))));
+      h('ul', { class: 'vqa-files' }, files.map((f) => h('li', null,
+        h('code', { text: str(f.path) + (f.lines ? ` · lines ${str(f.lines)}` : '') }),
+        f.reason ? str(f.reason) : f.missing ? `Not linked: ${f.missing}` : warn ? 'Not linked to any part of the diagram.' : null))));
     if (Array.isArray(cov.unexplained) && cov.unexplained.length) L.append(fileList('Changed, not explained', cov.unexplained, true));
+    if (Array.isArray(cov.partial) && cov.partial.length) L.append(fileList('Explained only in part', cov.partial.map((f) => ({ path: f.path, missing: missingText(f) })), true));
     if (Array.isArray(cov.unmapped) && cov.unmapped.length) L.append(fileList('Not in the diagram', cov.unmapped, false));
 
     L.append(h('div', { class: 'vqa-ledger-actions' }, h('button', { class: 'vqa-btn', type: 'button', onclick: copyChecklist, text: 'Copy QA checklist' })));
@@ -1244,6 +1280,7 @@
 
     const body = h('div', { class: 'vqa-drawer-body' });
     if (det.summary) body.append(dsec(it.status === 'unchanged' ? 'What it does' : 'What changed', rich(det.summary)));
+    else if (impliedNote(d, it)) body.append(dsec('What changed', rich(impliedNote(d, it))));
     if (it.kind === 'node' && it.shape === 'note' && !det.summary) {
       const t = textOf(it, it.status === 'removed' ? 'before' : 'after');
       const said = [t.sub, ...t.bullets.map((b) => '• ' + b)].filter(Boolean);
@@ -1252,12 +1289,12 @@
 
     const tb = textOf(it, 'before');
     const ta = textOf(it, 'after');
-    const beforeText = str(det.before) || (it.before ? [tb.title !== ta.title ? tb.title : '', it.kind === 'edge' ? tb.label : tb.sub].filter(Boolean).join(' — ') : '');
-    const afterText = str(det.after) || (it.before ? [tb.title !== ta.title ? ta.title : '', it.kind === 'edge' ? ta.label : ta.sub].filter(Boolean).join(' — ') : '');
+    const beforeText = str(det.before) || (it.before ? [tb.title !== ta.title ? tb.title : '', it.kind === 'edge' ? tb.label : tb.sub].filter(Boolean).join(': ') : '');
+    const afterText = str(det.after) || (it.before ? [tb.title !== ta.title ? ta.title : '', it.kind === 'edge' ? ta.label : ta.sub].filter(Boolean).join(': ') : '');
     if (it.status === 'changed' && (beforeText || afterText)) {
       body.append(dsec('Before → after', h('div', { class: 'vqa-ba' },
-        h('div', null, h('span', { class: 'lbl', text: 'Before' }), rich(beforeText || '—', 'div')),
-        h('div', { class: 'is-after' }, h('span', { class: 'lbl', text: 'After' }), rich(afterText || '—', 'div')))));
+        h('div', null, h('span', { class: 'lbl', text: 'Before' }), rich(beforeText || 'Not described', 'div')),
+        h('div', { class: 'is-after' }, h('span', { class: 'lbl', text: 'After' }), rich(afterText || 'Not described', 'div')))));
     } else if (it.status === 'added' && det.after) {
       body.append(dsec('What it does now', rich(det.after)));
     } else if (it.status === 'removed' && det.before) {
@@ -1336,7 +1373,8 @@
     const range = parseRange(ref.lines);
     let link = null;
     const repo = safeUrl(pr.repoUrl);
-    if (repo && sha && /^[0-9a-f]{7,40}$/i.test(str(sha)) && !(report.generated.worktree && !base)) {
+    const published = !report.generated.links || report.generated.links[base ? 'base' : 'head'] !== false;
+    if (repo && published && sha && /^[0-9a-f]{7,40}$/i.test(str(sha)) && !(report.generated.worktree && !base)) {
       const p = str(ref.path).split('/').map(encodeURIComponent).join('/');
       link = `${repo.replace(/\/+$/, '')}/blob/${sha}/${p}${range ? `#L${range[0]}${range[1] !== range[0] ? '-L' + range[1] : ''}` : ''}`;
     }
@@ -1410,8 +1448,8 @@
       if (report.diagrams.length > 1) out.push(`### ${d.title}`, '');
       for (const c of changes) {
         const reviewed = state.reviewed.has(d.id + ':' + c.id);
-        const head = str(c.detail.headline);
-        out.push(`- [${reviewed ? 'x' : ' '}] **${WORD[c.status]}: ${itemTitle(d, c)}**${head ? ' — ' + head : ''}`);
+        const head = str(c.detail.headline) || impliedNote(d, c);
+        out.push(`- [${reviewed ? 'x' : ' '}] **${WORD[c.status]}: ${itemTitle(d, c)}**${head ? '. ' + head : ''}`);
         normQa(c.detail.qa).forEach((q, i) => {
           const done = state.checks[`${d.id}:${c.id}:${i}`];
           out.push(`  - [${done ? 'x' : ' '}] ${q.check}${q.expect ? ' → ' + q.expect : ''}`);
@@ -1421,6 +1459,8 @@
     }
     const un = (report.coverage && report.coverage.unexplained) || [];
     if (un.length) out.push(`**Changed but not explained:** ${un.map((f) => '`' + f.path + '`').join(', ')}`);
+    const part = (report.coverage && report.coverage.partial) || [];
+    if (part.length) out.push(`**Explained only in part:** ${part.map((f) => '`' + f.path + '` (' + missingText(f) + ')').join(', ')}`);
     return out.join('\n').trim() + '\n';
   }
 
@@ -1482,7 +1522,10 @@
     const out = { ok: true, diagrams: [] };
     for (const d of report.diagrams) {
       const { lay, routes } = ensureLayout(d);
-      const res = { id: d.id, width: lay.width, height: lay.height, crossings: [], overlaps: [], labels: [], sharedLines: [], unrouted: [] };
+      const res = {
+        id: d.id, width: lay.width, height: lay.height, crossings: [], overlaps: [], labels: [], sharedLines: [], unrouted: [],
+        empty: { before: emptySections(d, 'before'), after: emptySections(d, 'after-clean') },
+      };
       const nodeRects = d.nodes.map((n) => ({ id: n.id, status: n.status, ...lay.rects.get(n.id) }));
       const rects = nodeRects.concat(lay.keepOut.map((k) => ({ ...k, id: k.label, status: 'keep-out' })));
       for (let i = 0; i < nodeRects.length; i++) {
