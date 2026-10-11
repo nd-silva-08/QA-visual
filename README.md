@@ -1,5 +1,9 @@
 # Visual QA
 
+[![Visual QA draws a pull request as before/after diagrams: removed parts fade out, changed parts light up, new parts snap in, and clicking a part shows its code and QA checks](docs/images/demo.gif)](https://nd-silva-08.github.io/QA-visual/visual-qa.mp4)
+
+**[Live demo](https://nd-silva-08.github.io/QA-visual/)** · [Watch the 40-second video](https://nd-silva-08.github.io/QA-visual/visual-qa.mp4) · [Install](#install)
+
 **Before/after diagrams for every pull request.** See exactly what a PR changes in your app's architecture or logic. Every new, changed, or removed part is highlighted, and clicking it shows the code lines behind it and the QA checks to run before you merge.
 
 A diff shows lines. A reviewer, a QA tester, or a product manager needs to see *behaviour*: which step is new, which check moved, what no longer happens. Visual QA is an agent skill (Claude Code plugin) that reads both sides of a pull request and draws them as the same diagram twice, with the change highlighted.
@@ -91,7 +95,7 @@ The spec format is documented in [`skills/visual-qa/references/spec-format.md`](
 
 ## Try the demo
 
-Open [`examples/refunds/report.html`](examples/refunds/report.html) in a browser (download it, or clone the repo). It's a made-up pull request that auto-approves small refunds: it adds a risk check and a decision, changes the finance queue, and removes a Slack ping and a nightly email job. [`examples/refunds/summary.md`](examples/refunds/summary.md) is the matching PR comment. Rebuild it with `npm run demo`.
+Open the **[live demo](https://nd-silva-08.github.io/QA-visual/)**, or [`examples/refunds/report.html`](examples/refunds/report.html) from a clone. It's a made-up pull request that auto-approves small refunds: it adds a risk check and a decision, changes the finance queue, and removes a Slack ping and a nightly email job. [`examples/refunds/summary.md`](examples/refunds/summary.md) is the matching PR comment. Rebuild it with `npm run demo`.
 
 | Before | Light theme | Phone |
 |---|---|---|
